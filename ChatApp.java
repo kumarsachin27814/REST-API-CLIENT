@@ -1,130 +1,48 @@
-import java.io.*;
-import java.net.*;
-import java.util.*;
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
 
-// === ChatApp: Combined Server & Client ===
-public class ChatApp {
-    private static final int PORT = 12345;
+import org.json.JSONObject;
 
+public class WeatherApp {
     public static void main(String[] args) {
-        if (args.length == 0) {
-            System.out.println("Usage: java ChatApp [server|client]");
-            return;
-        }
+        try {
+            
+            double latitude = 35.0;
+            double longitude = 139.0;
 
-        if (args[0].equalsIgnoreCase("server")) {
-            new ChatServer().startServer();
-        } else if (args[0].equalsIgnoreCase("client")) {
-            new ChatClient().startClient();
-        } else {
-            System.out.println("Invalid argument. Use 'server' or 'client'.");
-        }
-    }
-}
+            
+            String apiUrl = "https://api.open-meteo.com/v1/forecast?latitude=" +
+                            latitude + "&longitude=" + longitude + "&current_weather=true";
 
+           
+            HttpURLConnection connection = (HttpURLConnection) new URL(apiUrl).openConnection();
+            connection.setRequestMethod("GET");
 
-class ChatServer {
-    private static Set<ClientHandler> clients = Collections.synchronizedSet(new HashSet<>());
-
-    public void startServer() {
-        System.out.println("Chat Server started on port " + ChatApp.PORT);
-
-        try (ServerSocket serverSocket = new ServerSocket(ChatApp.PORT)) {
-            while (true) {
-                Socket clientSocket = serverSocket.accept();
-                ClientHandler handler = new ClientHandler(clientSocket);
-                clients.add(handler);
-                handler.start();
-                System.out.println("New client connected.");
+            BufferedReader in = new BufferedReader(new InputStreamReader(connection.getInputStream()));
+            StringBuilder responseBuilder = new StringBuilder();
+            String inputLine;
+            while ((inputLine = in.readLine()) != null) {
+                responseBuilder.append(inputLine);
             }
-        } catch (IOException e) {
-            System.out.println("Server error: " + e.getMessage());
+            in.close();
+
+            // Parse JSON response
+            JSONObject jsonResponse = new JSONObject(responseBuilder.toString());
+            JSONObject currentWeather = jsonResponse.getJSONObject("current_weather");
+
+            // Display weather data
+            System.out.println("\n==== Current Weather Report ====");
+            System.out.println("Temperature: " + currentWeather.getDouble("temperature") + " °C");
+            System.out.println("Wind Speed: " + currentWeather.getDouble("windspeed") + " km/h");
+            System.out.println("Wind Direction: " + currentWeather.getDouble("winddirection") + "°");
+            System.out.println("Time: " + currentWeather.getString("time"));
+
+        } catch (Exception e) {
+            System.err.println("Error fetching weather data: " + e.getMessage());
         }
     }
-
-    private void broadcast(String message, ClientHandler sender) {
-        synchronized (clients) {
-            for (ClientHandler client : clients) {
-                if (client != sender) {
-                    client.sendMessage(message);
-                }
-            }
-        }
-    }
-
-    class ClientHandler extends Thread {
-        private Socket socket;
-        private PrintWriter out;
-        private String name;
-
-        public ClientHandler(Socket socket) {
-            this.socket = socket;
-        }
-
-        public void run() {
-            try (
-                BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))
-            ) {
-                out = new PrintWriter(socket.getOutputStream(), true);
-                out.println("Enter your name:");
-                name = in.readLine();
-                broadcast(name + " joined the chat!", this);
-
-                String msg;
-                while ((msg = in.readLine()) != null) {
-                    if (msg.equalsIgnoreCase("exit")) break;
-                    System.out.println(name + ": " + msg);
-                    broadcast(name + ": " + msg, this);
-                }
-            } catch (IOException e) {
-                System.out.println("Connection error with " + name);
-            } finally {
-                try {
-                    clients.remove(this);
-                    socket.close();
-                    broadcast(name + " left the chat.", this);
-                } catch (IOException e) {
-                    e.printStackTrace();
-                }
-            }
-        }
-
-        void sendMessage(String message) {
-            out.println(message);
-        }
-    }
-}
-
-class ChatClient {
-    public void startClient() {
-        try (
-            Socket socket = new Socket("localhost", ChatApp.PORT);
-            BufferedReader userInput = new BufferedReader(new InputStreamReader(System.in));
-            PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-            BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()))
-        ) {
-        
-            Thread readerThread = new Thread(() -> {
-                try {
-                    String msg;
-                    while ((msg = in.readLine()) != null) {
-                        System.out.println(msg);
-                    }
-                } catch (IOException e) {
-                    System.out.println("Server disconnected.");
-                }
-            });
-            readerThread.start();
-
-            String input;
-            while ((input = userInput.readLine()) != null) {
-                out.println(input);
-                if (input.equalsIgnoreCase("exit")) break;
-            }
-
-        } catch (IOException e) {
-            System.out.println("Unable to connect to server.");
-        }
-    }
+    
 }
 
